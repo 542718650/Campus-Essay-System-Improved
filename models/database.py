@@ -7,7 +7,7 @@ import sqlite3
 import json
 import pandas as pd
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 from config import get_db_path

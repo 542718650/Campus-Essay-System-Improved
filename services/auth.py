@@ -143,17 +143,9 @@ def unbind_parent_student(parent_username: str, student_username: str) -> bool:
     return db_unbind(parent_username, student_username)
 
 def get_parent_children(parent_username: str) -> list:
-    """Get all students bound to a parent."""
-    conn = get_conn()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "SELECT username, real_name, grade, class_name FROM users WHERE parent_of = ?",
-            (parent_username,)
-        )
-        return cur.fetchall()
-    finally:
-        conn.close()
+    """Get all students bound to a parent via parent_student_bindings table."""
+    from models.database import get_parent_children as db_get
+    return db_get(parent_username)
 
 def has_permission(user: Dict[str, Any], required_role: str) -> bool:
     """Check if user has the required role."""

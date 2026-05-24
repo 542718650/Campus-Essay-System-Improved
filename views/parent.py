@@ -4,13 +4,12 @@ Handles parent-facing UI with proper child binding and filtering.
 """
 
 import streamlit as st
-import pandas as pd
 from typing import Dict, Any
 
 from models.database import query_df
 from services.auth import (
     bind_parent_student, unbind_parent_student,
-    get_parent_children, login_user
+    get_parent_children
 )
 
 def render_parent_view(user: Dict[str, Any]) -> None:

@@ -114,8 +114,8 @@ def fallback_feedback(grade: str, genre: str, topic: str, essay: str) -> Dict[st
     wc = chinese_word_count(essay)
     pc = paragraph_count(essay)
     sc = sentence_count(essay)
-    struct_score = infer_structure_score(essay)
-    expr_score = infer_expression_score(essay)
+    struct_score = infer_structure_score(essay, grade)
+    expr_score = infer_expression_score(essay, grade)
     total = min(100, (struct_score + expr_score) // 2)
 
     return {

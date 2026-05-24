@@ -4,7 +4,6 @@ Handles teacher-facing UI: assignments, review, and class management.
 """
 
 import streamlit as st
-import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
 

@@ -7,7 +7,7 @@ Includes new "Start Rewrite" entry point.
 import streamlit as st
 import pandas as pd
 import io
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
 
 from models.database import (
@@ -80,6 +80,12 @@ def render_student_view(user: Dict[str, Any]) -> None:
     """Render the student-facing UI with all features."""
     st.header("学生端：作文练习与成长记录")
 
+    # Auto-redirect to writing interface after rewrite submission
+    if st.session_state.get("_redirect_to_writing"):
+        del st.session_state._redirect_to_writing
+        _render_writing_interface(user)
+        return
+
     # Main navigation with improved rewrite entry
     menu = st.radio(
         "选择功能",
@@ -98,30 +104,109 @@ def render_student_view(user: Dict[str, Any]) -> None:
     elif menu == "成长档案":
         _render_growth_records(user)
 
+def _render_feedback_results(fb: Dict[str, Any]) -> None:
+    """Render feedback results after submission."""
+    st.markdown("### 作文点评")
+
+    # Score overview
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("总分", fb["total_score"])
+    with col2:
+        st.metric("结构分", fb["structure_score"])
+    with col3:
+        st.metric("表达分", fb["expression_score"])
+    with col4:
+        st.metric("字数", fb["word_count"])
+
+    # Feedback tabs
+    t1, t2 = st.tabs(["教师点评", "学生点评"])
+    with t1:
+        st.write(fb.get("teacher_feedback", "暂无"))
+    with t2:
+        st.write(fb.get("student_feedback", "暂无"))
+
+    # Strengths and suggestions
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### 优点")
+        for s in fb.get("strengths", []):
+            st.write(f"- {s}")
+    with col2:
+        st.markdown("#### 建议")
+        for s in fb.get("suggestions", []):
+            st.write(f"- {s}")
+
+    # Polished sentence
+    if fb.get("polished_sentence"):
+        st.markdown("#### 佳句润色")
+        st.info(fb["polished_sentence"])
+
+    # Outline advice
+    if fb.get("outline_advice"):
+        st.markdown("#### 结构建议")
+        st.info(fb["outline_advice"])
+
 def _render_writing_interface(user: Dict[str, Any]) -> None:
     """Render the main writing interface."""
     st.subheader("开始写作文")
 
+    # Show success message if redirected from rewrite submission
+    if st.session_state.get("_submit_success_msg"):
+        st.success(st.session_state._submit_success_msg)
+        del st.session_state._submit_success_msg
+
+    # Display feedback results if available
+    if st.session_state.get("last_feedback"):
+        _render_feedback_results(st.session_state.last_feedback)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("开始改写", type="primary", use_container_width=True):
+                fb = st.session_state.last_feedback
+                st.session_state.rewrite_target_id = fb["submission_id"]
+                st.session_state.rewrite_essay = fb["essay"]
+                st.session_state.show_writing_form = True
+                st.rerun()
+        with col_b:
+            if st.button("写一篇新的", type="secondary", use_container_width=True):
+                del st.session_state.last_feedback
+                st.session_state.show_writing_form = False
+                st.rerun()
+        st.markdown("---")
+
+    # Show writing form (always visible when no feedback, or when user clicks 开始改写)
+    if not st.session_state.get("last_feedback") or st.session_state.get("show_writing_form"):
+        is_rewrite = st.session_state.get("show_writing_form", False) and st.session_state.get("last_feedback") is not None
+        _render_writing_form(
+            user,
+            is_rewrite=is_rewrite,
+            original_essay=st.session_state.get("rewrite_essay", ""),
+            original_submission_id=st.session_state.get("rewrite_target_id")
+        )
+
+def _render_writing_form(user: Dict[str, Any], is_rewrite: bool = False, original_essay: str = "", original_submission_id: int = None) -> None:
+    """Render the essay writing form (inputs + submit)."""
     col1, col2, col3 = st.columns(3)
     with col1:
         grade = st.selectbox("年级", ["三年级", "四年级", "五年级", "六年级"], index=0)
     with col2:
         genre = st.selectbox("作文类型", list(ESSAY_TEMPLATES.keys()))
     with col3:
-        topic = st.text_input("作文题目", placeholder="输入或选择题目")
+        topic = st.text_input("作文题目", key="topic_input", placeholder="输入或选择题目")
 
     # Topic suggestions
+    def _select_topic(t):
+        st.session_state.topic_input = t
+
     if genre in TOPIC_SUGGESTIONS:
         st.caption("推荐题目：")
         cols = st.columns(3)
         for i, t in enumerate(TOPIC_SUGGESTIONS[genre][:6]):
             with cols[i % 3]:
-                if st.button(t, key=f"topic_{i}"):
-                    st.session_state.selected_topic = t
-                    st.rerun()
+                st.button(t, key=f"topic_{i}", on_click=_select_topic, args=(t,))
 
-    if topic or st.session_state.get("selected_topic"):
-        actual_topic = topic or st.session_state.get("selected_topic", "")
+    if topic:
+        actual_topic = topic
 
         # Template guidance
         if actual_topic and genre in ESSAY_TEMPLATES:
@@ -136,13 +221,26 @@ def _render_writing_interface(user: Dict[str, Any]) -> None:
                 for ending in template["endings"]:
                     st.write(f"- {ending}")
 
-        essay = st.text_area("开始写作文", height=280, placeholder="把你的作文写在这里……")
+        # Resolve draft input for text_area value
+        draft_value = st.session_state.get("essay_input")
+        if draft_value is not None:
+            del st.session_state.essay_input
+
+        essay = st.text_area(
+            "开始写作文" if not is_rewrite else "改写后的作文",
+            value=draft_value if draft_value is not None else (original_essay if is_rewrite else ""),
+            height=280,
+            placeholder="把你的作文写在这里……"
+        )
 
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("提交点评", type="primary", use_container_width=True):
+            if st.button("提交作文" if not is_rewrite else "提交新版本", type="primary", use_container_width=True):
                 if essay.strip():
-                    _process_submission(user, essay, actual_topic, genre, grade)
+                    if is_rewrite and original_submission_id:
+                        _process_rewrite(user, essay, actual_topic, genre, grade, original_submission_id)
+                    else:
+                        _process_submission(user, essay, actual_topic, genre, grade)
                 else:
                     st.error("请先写作文再提交")
         with col_b:
@@ -222,10 +320,79 @@ def _process_submission(
         st.success("点评完成！")
         st.rerun()
 
+def _process_rewrite(
+    user: Dict[str, Any],
+    essay: str,
+    topic: str,
+    genre: str,
+    grade: str,
+    original_submission_id: int
+) -> None:
+    """Process rewritten essay: save as new submission and version, then redirect to writing view."""
+    wc = chinese_word_count(essay)
+    struct_score = infer_structure_score(essay, grade)
+    expr_score = infer_expression_score(essay, grade)
+    total_score = calculate_total_score(struct_score, expr_score)
+
+    feedback = llm_json_feedback(grade, genre, topic, essay)
+
+    # Save new submission
+    submission_data = {
+        "student_username": user["username"],
+        "essay_text": essay,
+        "grade": grade,
+        "genre": genre,
+        "topic": topic,
+        "word_count": wc,
+        "structure_score": struct_score,
+        "expression_score": expr_score,
+        "total_score": total_score,
+        **feedback
+    }
+    new_submission_id = save_submission(submission_data)
+
+    # Save as new version linked to original submission
+    versions = query_df(
+        "SELECT MAX(version_no) as max_ver FROM essay_versions WHERE submission_id = ?",
+        (int(original_submission_id),)
+    )
+    max_ver = versions.iloc[0]["max_ver"]
+    next_version = (int(max_ver) if max_ver else 1) + 1
+    save_essay_version(original_submission_id, next_version, essay, wc)
+
+    # Update growth record
+    save_growth_record({
+        "student_username": user["username"],
+        "genre": genre,
+        "word_count": wc,
+        "structure_score": struct_score,
+        "expression_score": expr_score,
+        "total_score": total_score
+    })
+
+    # Set feedback and redirect state
+    st.session_state.last_feedback = {
+        "submission_id": new_submission_id,
+        "essay": essay,
+        "topic": topic,
+        "genre": genre,
+        "grade": grade,
+        "word_count": wc,
+        "structure_score": struct_score,
+        "expression_score": expr_score,
+        "total_score": total_score,
+        **feedback
+    }
+    st.session_state._submit_success_msg = f"新版本（v{next_version}）提交成功！"
+    st.session_state._redirect_to_writing = True
+    # Clear rewrite state
+    st.session_state.pop("rewrite_target_id", None)
+    st.session_state.pop("rewrite_essay", None)
+    st.session_state.show_writing_form = False
+
 def _render_rewrite_interface(user: Dict[str, Any]) -> None:
     """
-    NEW FEATURE: Rewrite interface.
-    Allows students to continue revising based on previous feedback.
+    Rewrite interface for revising based on previous feedback.
     """
     st.subheader("继续改写")
 
@@ -242,13 +409,13 @@ def _render_rewrite_interface(user: Dict[str, Any]) -> None:
 
     # Select submission to rewrite
     submission_options = [
-        f"{row['topic']} ({row['genre']}) - {row['created_at'][:10]} - 得分:{row['total_score']}"
+        f"{row['topic']} ({row['genre']}) - {row['created_at'][:10]} - 得分:{int(row['total_score'])}"
         for _, row in submissions.iterrows()
     ]
 
     selected_idx = st.selectbox("选择要改写的作文", submission_options)
     selected_submission = submissions.iloc[submission_options.index(selected_idx)]
-    submission_id = selected_submission["id"]
+    submission_id = int(selected_submission["id"])
 
     # Load original essay and feedback
     original = query_df(
@@ -283,66 +450,18 @@ def _render_rewrite_interface(user: Dict[str, Any]) -> None:
     st.markdown("### 开始改写")
     rewritten = st.text_area("改写后的作文", height=280, placeholder="根据指导建议，在这里写下改写后的作文……")
 
-    if st.button("提交新版本", type="primary", use_container_width=True):
+    if st.button("提交新版本", type="primary", use_container_width=True, key="submit_rewrite_btn"):
         if rewritten.strip():
             with st.spinner("正在分析新版本……"):
-                wc = chinese_word_count(rewritten)
-                pc = paragraph_count(rewritten)
-                sc = sentence_count(rewritten)
-                struct_score = infer_structure_score(rewritten, row["grade"])
-                expr_score = infer_expression_score(rewritten, row["grade"])
-                total_score = calculate_total_score(struct_score, expr_score)
-
-                feedback = llm_json_feedback(row["grade"], row["genre"], row["topic"], rewritten)
-
-                # Save new submission
-                new_submission_data = {
-                    "student_username": user["username"],
-                    "assignment_id": row.get("assignment_id"),
-                    "essay_text": rewritten,
-                    "grade": row["grade"],
-                    "genre": row["genre"],
-                    "topic": row["topic"],
-                    "word_count": wc,
-                    "structure_score": struct_score,
-                    "expression_score": expr_score,
-                    "total_score": total_score,
-                    **feedback
-                }
-                new_submission_id = save_submission(new_submission_data)
-
-                # Get next version number
-                versions = query_df(
-                    "SELECT MAX(version_no) as max_ver FROM essay_versions WHERE submission_id = ?",
-                    (submission_id,)
-                )
-                next_version = (versions.iloc[0]["max_ver"] or 1) + 1
-                save_essay_version(submission_id, next_version, rewritten, wc)
-
-                # Update growth record
-                save_growth_record({
-                    "student_username": user["username"],
-                    "genre": row["genre"],
-                    "word_count": wc,
-                    "structure_score": struct_score,
-                    "expression_score": expr_score,
-                    "total_score": total_score
-                })
-
-                st.success(f"新版本（v{next_version}）提交成功！")
-                st.session_state.last_feedback = {
-                    "submission_id": new_submission_id,
-                    "essay": rewritten,
-                    "topic": row["topic"],
-                    "genre": row["genre"],
-                    "grade": row["grade"],
-                    "word_count": wc,
-                    "structure_score": struct_score,
-                    "expression_score": expr_score,
-                    "total_score": total_score,
-                    **feedback
-                }
-                st.rerun()
+                try:
+                    _process_rewrite(
+                        user, rewritten, row["topic"], row["genre"], row["grade"], submission_id
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"提交失败：{e}")
+                    import traceback
+                    st.code(traceback.format_exc())
         else:
             st.error("请填写改写后的作文")
 
@@ -384,7 +503,7 @@ def _render_image_writing(user: Dict[str, Any]) -> None:
 
             # Writing area after prompts
             essay = st.text_area("开始写作文", height=200, placeholder="根据提示开始写作……")
-            if st.button("提交点评"):
+            if st.button("提交作文", type="primary"):
                 if essay.strip():
                     _process_submission(
                         user, essay,
@@ -446,8 +565,6 @@ def _render_version_comparison(user: Dict[str, Any]) -> None:
     # Rewrite entry point from comparison
     if st.button("基于此版本继续改写", type="primary"):
         st.session_state.rewrite_target_id = submission_id
-        st.session_state.rewrite_version = v2_sel
-        # Navigate to rewrite (simplified)
         st.info("请切换到'继续改写'标签开始修改")
 
 def _render_growth_records(user: Dict[str, Any]) -> None:
