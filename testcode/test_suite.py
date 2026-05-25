@@ -1,79 +1,191 @@
+"""
+Test suite runner for Campus Essay System.
+Runs all test modules and collects results.
+"""
+
 import unittest
+import datetime
 import sys
 import os
-import datetime
-import subprocess
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-def check_python_installation():
-    """检查Python是否安装"""
-    try:
-        subprocess.run([sys.executable, "--version"], check=True, capture_output=True)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+def run_all_tests():
+    """Run all tests and collect detailed results."""
+    print("开始运行 Campus Essay System 测试套件...")
+    print("=" * 60)
+
+    suite = unittest.TestSuite()
+    loader = unittest.TestLoader()
+
+    # Import all test classes
+    from test_basic_functions import (
+        TestChineseWordCount, TestParagraphCount, TestSentenceCount,
+        TestStructureScore, TestExpressionScore, TestCalculateTotalScore,
+        TestGenerateFeedbackSummary, TestPasswordHashing,
+        TestRolePermission, TestConfig, TestConstants
+    )
+    from test_llm_functions import (
+        TestLLMFunctions, TestFallbackStepRewrite
+    )
+    from test_system_integration import (
+        TestFullEssayReviewFlow, TestDatabaseAuthIntegration,
+        TestDatabaseOperationsIntegration, TestLLMServiceIntegration,
+        TestModuleInteractionConsistency
+    )
+    from test_acceptance import (
+        TestUserStories, TestOutputFormatAcceptance,
+        TestContentQualityAcceptance, TestEdgeCaseAcceptance
+    )
+    from test_role_auth import (
+        TestRoleAuth, TestRoleRegistration,
+        TestParentStudentBinding, TestPermissionChecks
+    )
+    from test_security import (
+        TestCredentialSecurity, TestPasswordSecurity,
+        TestSQLInjection, TestAuthorizationSecurity
+    )
+    from test_performance import (
+        TestTextMetricsPerformance, TestFeedbackPerformance,
+        TestDatabasePerformance, TestAuthPerformance
+    )
+
+    # Add all test classes
+    for test_class in [
+        TestChineseWordCount, TestParagraphCount, TestSentenceCount,
+        TestStructureScore, TestExpressionScore, TestCalculateTotalScore,
+        TestGenerateFeedbackSummary, TestPasswordHashing,
+        TestRolePermission, TestConfig, TestConstants,
+        TestLLMFunctions, TestFallbackStepRewrite,
+        TestFullEssayReviewFlow, TestDatabaseAuthIntegration,
+        TestDatabaseOperationsIntegration, TestLLMServiceIntegration,
+        TestModuleInteractionConsistency,
+        TestUserStories, TestOutputFormatAcceptance,
+        TestContentQualityAcceptance, TestEdgeCaseAcceptance,
+        TestRoleAuth, TestRoleRegistration,
+        TestParentStudentBinding, TestPermissionChecks,
+        TestCredentialSecurity, TestPasswordSecurity,
+        TestSQLInjection, TestAuthorizationSecurity,
+        TestTextMetricsPerformance, TestFeedbackPerformance,
+        TestDatabasePerformance, TestAuthPerformance,
+    ]:
+        suite.addTests(loader.loadTestsFromTestCase(test_class))
+
+    # Run with custom result collector
+    result_collector = _DetailedResultCollector()
+    runner = unittest.TextTestRunner(
+        resultclass=_DetailedResultCollector, verbosity=2
+    )
+    result = runner.run(suite)
+
+    # Collect results
+    total = result.testsRun
+    passed = total - len(result.failures) - len(result.errors)
+
+    return {
+        'total': total,
+        'passed': passed,
+        'failed': len(result.failures),
+        'errors': len(result.errors),
+        'success_rate': passed / total * 100 if total > 0 else 0,
+        'test_details': result_collector.test_results,
+        'timestamp': datetime.datetime.now().isoformat()
+    }
+
+
+def run_test_category(category):
+    """Run tests by category."""
+    print(f"开始运行 {category} 测试...")
+    print("=" * 60)
+
+    suite = unittest.TestSuite()
+    loader = unittest.TestLoader()
+
+    category_map = {
+        'unit': [
+            'test_basic_functions.TestChineseWordCount',
+            'test_basic_functions.TestParagraphCount',
+            'test_basic_functions.TestSentenceCount',
+            'test_basic_functions.TestStructureScore',
+            'test_basic_functions.TestExpressionScore',
+            'test_basic_functions.TestCalculateTotalScore',
+            'test_basic_functions.TestGenerateFeedbackSummary',
+            'test_basic_functions.TestPasswordHashing',
+            'test_basic_functions.TestRolePermission',
+            'test_basic_functions.TestConfig',
+            'test_basic_functions.TestConstants',
+        ],
+        'llm': [
+            'test_llm_functions.TestLLMFunctions',
+            'test_llm_functions.TestFallbackStepRewrite',
+        ],
+        'integration': [
+            'test_system_integration.TestFullEssayReviewFlow',
+            'test_system_integration.TestDatabaseAuthIntegration',
+            'test_system_integration.TestDatabaseOperationsIntegration',
+            'test_system_integration.TestLLMServiceIntegration',
+            'test_system_integration.TestModuleInteractionConsistency',
+        ],
+        'acceptance': [
+            'test_acceptance.TestUserStories',
+            'test_acceptance.TestOutputFormatAcceptance',
+            'test_acceptance.TestContentQualityAcceptance',
+            'test_acceptance.TestEdgeCaseAcceptance',
+        ],
+        'role': [
+            'test_role_auth.TestRoleAuth',
+            'test_role_auth.TestRoleRegistration',
+            'test_role_auth.TestParentStudentBinding',
+            'test_role_auth.TestPermissionChecks',
+        ],
+        'security': [
+            'test_security.TestCredentialSecurity',
+            'test_security.TestPasswordSecurity',
+            'test_security.TestSQLInjection',
+            'test_security.TestAuthorizationSecurity',
+        ],
+        'performance': [
+            'test_performance.TestTextMetricsPerformance',
+            'test_performance.TestFeedbackPerformance',
+            'test_performance.TestDatabasePerformance',
+            'test_performance.TestAuthPerformance',
+        ],
+    }
+
+    if category not in category_map:
+        print(f"未知的测试类别: {category}")
+        print(f"可用类别: {', '.join(category_map.keys())}")
         return False
 
+    for test_name in category_map[category]:
+        suite.addTests(loader.loadTestsFromName(test_name))
 
-def check_dependencies():
-    """检查并安装项目依赖"""
-    print("正在检查项目依赖...")
-    
-    dependencies = ['streamlit']
-    
-    for dep in dependencies:
-        try:
-            subprocess.run(
-                [sys.executable, "-c", f"import {dep}; print('✅ {dep}已安装')"],
-                check=True,
-                capture_output=True,
-                text=True
-            )
-        except subprocess.CalledProcessError:
-            print(f"❌ 缺少依赖：{dep}")
-            print(f"正在安装依赖：{dep}...")
-            try:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", dep],
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-                print(f"✅ {dep}安装成功")
-            except subprocess.CalledProcessError as e:
-                print(f"❌ {dep}安装失败: {e.stderr}")
-                return False
-    return True
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    return result.wasSuccessful()
 
 
-def pause_before_exit():
-    """仅在交互式终端中等待用户确认退出。"""
-    if sys.stdin.isatty():
-        input("按回车键退出...")
+class _DetailedResultCollector(unittest.TestResult):
+    """Collects detailed test results for reporting."""
 
-
-class TestResultCollector(unittest.TestResult):
-    """自定义测试结果收集器"""
-    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.test_results = []
         self.start_time = None
         self.end_time = None
-    
+
     def startTest(self, test):
-        """测试开始时记录时间"""
         self.start_time = datetime.datetime.now()
         super().startTest(test)
-    
+
     def stopTest(self, test):
-        """测试结束时记录结果"""
         self.end_time = datetime.datetime.now()
         duration = (self.end_time - self.start_time).total_seconds()
-        
-        # 确定测试状态
+
         status = 'passed'
         message = ''
-        
+
         if test in self.failures:
             status = 'failed'
             for t, err in self.failures:
@@ -86,169 +198,48 @@ class TestResultCollector(unittest.TestResult):
                 if t == test:
                     message = err
                     break
-        
-        # 记录测试详情
-        class_name = test.__class__.__name__
-        test_name = test._testMethodName
-        
+
         self.test_results.append({
-            'class_name': class_name,
-            'test_name': test_name,
+            'class_name': test.__class__.__name__,
+            'test_name': test._testMethodName,
             'status': status,
             'message': message,
             'duration': duration
         })
-        
+
         super().stopTest(test)
 
 
-def run_all_tests():
-    """运行所有测试并收集详细结果"""
-    print("开始运行 v3 版本测试套件...")
-    print("=" * 60)
-    
-    # 创建测试套件
-    suite = unittest.TestSuite()
-    
-    # 添加测试用例 - 使用TestLoader替代makeSuite
-    loader = unittest.TestLoader()
-    
-    # 动态导入测试模块
-    from test_basic_functions import TestBasicFunctions
-    from test_llm_functions import TestLLMFunctions
-    from test_system_integration import TestSystemIntegration
-    from test_acceptance import TestAcceptance
-    from test_role_auth import TestRoleAuth
-    from test_security import TestSecurity
-    from test_performance import TestPerformance
-    
-    suite.addTests(loader.loadTestsFromTestCase(TestBasicFunctions))
-    suite.addTests(loader.loadTestsFromTestCase(TestLLMFunctions))
-    suite.addTests(loader.loadTestsFromTestCase(TestSystemIntegration))
-    suite.addTests(loader.loadTestsFromTestCase(TestAcceptance))
-    suite.addTests(loader.loadTestsFromTestCase(TestRoleAuth))
-    suite.addTests(loader.loadTestsFromTestCase(TestSecurity))
-    suite.addTests(loader.loadTestsFromTestCase(TestPerformance))
-    
-    # 使用自定义结果收集器运行测试
-    result_collector = TestResultCollector()
-    runner = unittest.TextTestRunner(resultclass=TestResultCollector, verbosity=2)
-    result = runner.run(suite)
-    
-    # 统计测试结果
-    total = result.testsRun
-    passed = total - len(result.failures) - len(result.errors)
-    failed = len(result.failures)
-    errors = len(result.errors)
-    
-    # 返回测试结果数据
-    return {
-        'total': total,
-        'passed': passed,
-        'failed': failed,
-        'errors': errors,
-        'success_rate': passed/total*100 if total > 0 else 0,
-        'test_details': result.test_results,
-        'timestamp': datetime.datetime.now().isoformat()
-    }
-
-
-def run_test_category(category):
-    """按类别运行测试"""
-    print(f"开始运行 {category} 测试...")
-    print("=" * 60)
-    
-    suite = unittest.TestSuite()
-    loader = unittest.TestLoader()
-    
-    # 动态导入测试模块
-    from test_basic_functions import TestBasicFunctions
-    from test_llm_functions import TestLLMFunctions
-    from test_system_integration import TestSystemIntegration
-    from test_acceptance import TestAcceptance
-    from test_role_auth import TestRoleAuth
-    from test_security import TestSecurity
-    from test_performance import TestPerformance
-    
-    if category == 'basic':
-        suite.addTests(loader.loadTestsFromTestCase(TestBasicFunctions))
-    elif category == 'llm':
-        suite.addTests(loader.loadTestsFromTestCase(TestLLMFunctions))
-    elif category == 'system':
-        suite.addTests(loader.loadTestsFromTestCase(TestSystemIntegration))
-    elif category == 'acceptance':
-        suite.addTests(loader.loadTestsFromTestCase(TestAcceptance))
-    elif category == 'role':
-        suite.addTests(loader.loadTestsFromTestCase(TestRoleAuth))
-    elif category == 'security':
-        suite.addTests(loader.loadTestsFromTestCase(TestSecurity))
-    elif category == 'performance':
-        suite.addTests(loader.loadTestsFromTestCase(TestPerformance))
-    else:
-        print(f"未知的测试类别: {category}")
-        return False
-    
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    
-    return result.wasSuccessful()
-
-
 def main():
-    """主函数：整合批命令功能，实现跨平台一键测试"""
+    """Main entry point."""
     print("=" * 60)
-    print("妙妙作文屋 v3 版本自动测试脚本")
+    print("校园作文辅导系统 自动测试脚本")
     print("=" * 60)
     print()
-    
-    # 检查Python安装
-    if not check_python_installation():
-        print("❌ 错误：未安装Python或Python不在系统路径中")
-        pause_before_exit()
-        sys.exit(1)
-    
-    print("✅ Python已安装")
-    print()
-    
-    # 检查依赖
-    if not check_dependencies():
-        print("❌ 依赖检查失败")
-        pause_before_exit()
-        sys.exit(1)
-    
-    print()
-    print("正在运行测试套件...")
-    print("=" * 60)
-    
-    # 运行测试
+
     test_results = run_all_tests()
-    
-    # 更新README.md文件
-    from test_report_generator import update_readme_with_results
-    update_readme_with_results(test_results)
-    
-    # 显示结果
+
     print()
     if test_results['failed'] == 0 and test_results['errors'] == 0:
         print("=" * 60)
         print("🎉 测试全部通过！")
+        print(f"  总计: {test_results['total']} | "
+              f"通过: {test_results['passed']} | "
+              f"通过率: {test_results['success_rate']:.1f}%")
         print("=" * 60)
     else:
         print("=" * 60)
-        print("❌ 测试失败，请检查README.md中的失败详情")
+        print("❌ 测试存在失败")
+        print(f"  总计: {test_results['total']} | "
+              f"通过: {test_results['passed']} | "
+              f"失败: {test_results['failed']} | "
+              f"错误: {test_results['errors']}")
         print("=" * 60)
-    
-    print()
-    print("=" * 60)
-    print("📊 测试结果已更新到README.md文件")
-    print("=" * 60)
-    
-    # 直接退出，不等待用户输入（适用于CI/CD环境）
+
     sys.exit(0 if test_results['failed'] == 0 and test_results['errors'] == 0 else 1)
 
 
 if __name__ == '__main__':
-    # 检查命令行参数
     if len(sys.argv) > 1:
         category = sys.argv[1]
         success = run_test_category(category)

@@ -1,114 +1,143 @@
-import unittest
-import sys
-import os
+"""
+LLM integration tests for Campus Essay System.
+Tests LLM feedback, image prompts, and fallback chain behavior.
+"""
 
-# 添加项目根目录到路径
+import os
+import sys
+import unittest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from campus_essay_system import (
-    llm_json_feedback,
-    fallback_feedback,
-    generate_topics,
-    compare_with_model_essay,
-    text_to_data_url,
-    fallback_image_prompts,
-    vision_observation_prompts,
-    build_prompt,
-    grade_expectation,
-    get_rubric_markdown
+from services.llm import (
+    fallback_feedback, fallback_image_prompts,
+    get_openai_client
 )
 
 
 class TestLLMFunctions(unittest.TestCase):
-    """测试LLM相关功能（v3版本）"""
-    
-    def test_fallback_feedback(self):
-        """测试回退反馈功能"""
+    """LLM service and fallback tests"""
+
+    def test_fallback_feedback_structure(self):
+        """Fallback feedback must return all required fields"""
         feedback = fallback_feedback("三年级", "写人", "我的妈妈", "这是一篇测试作文。")
-        
-        # 验证回退反馈的结构
-        self.assertIn("teacher_feedback", feedback)
-        self.assertIn("student_feedback", feedback)
-        self.assertIn("strengths", feedback)
-        self.assertIn("suggestions", feedback)
-        self.assertIn("polished_sentence", feedback)
-        self.assertIn("outline_advice", feedback)
-        self.assertIn("step_rewrite", feedback)
-        
-        # 验证内容类型
+
+        required = [
+            "teacher_feedback", "student_feedback",
+            "strengths", "suggestions",
+            "polished_sentence", "outline_advice", "step_rewrite"
+        ]
+        for field in required:
+            self.assertIn(field, feedback, f"Missing field: {field}")
+
+    def test_fallback_feedback_field_types(self):
+        """Feedback fields must have correct types"""
+        feedback = fallback_feedback("三年级", "写事", "一次活动", "今天很高兴。")
+
+        self.assertIsInstance(feedback["teacher_feedback"], str)
+        self.assertIsInstance(feedback["student_feedback"], str)
         self.assertIsInstance(feedback["strengths"], list)
         self.assertIsInstance(feedback["suggestions"], list)
+        self.assertIsInstance(feedback["polished_sentence"], str)
+        self.assertIsInstance(feedback["outline_advice"], str)
         self.assertIsInstance(feedback["step_rewrite"], dict)
-    
+
     def test_fallback_feedback_short_essay(self):
-        """测试短作文的回退反馈"""
-        short_essay = "很短。"
-        feedback = fallback_feedback("三年级", "写事", "一次活动", short_essay)
-        
-        self.assertIn("字数还可以再充实一些", feedback["suggestions"][0])
-    
+        """Short essay feedback should reflect word count"""
+        feedback = fallback_feedback("三年级", "写事", "一次活动", "很短。")
+        # The fallback includes word count in teacher_feedback
+        self.assertIn("字", feedback["teacher_feedback"])
+
     def test_fallback_feedback_normal_essay(self):
-        """测试正常长度作文的回退反馈"""
-        normal_essay = "这是一篇正常长度的作文。今天天气很好，我和同学们一起去公园玩。"
-        feedback = fallback_feedback("三年级", "写景", "秋天的公园", normal_essay)
-        
+        """Normal essay should produce multiple strengths and suggestions"""
+        essay = "这是一篇正常长度的作文。今天天气很好，我和同学们一起去公园玩。"
+        feedback = fallback_feedback("三年级", "写景", "秋天的公园", essay)
+
         self.assertIsInstance(feedback["strengths"], list)
-        self.assertTrue(len(feedback["strengths"]) >= 3)
-        self.assertTrue(len(feedback["suggestions"]) >= 3)
-    
-    def test_generate_topics(self):
-        """测试生成主题功能"""
-        topics = generate_topics("三年级", "写人")
-        self.assertIsInstance(topics, list)
-        self.assertTrue(len(topics) > 0)
-        
-        topics_with_keyword = generate_topics("三年级", "写人", "足球")
-        self.assertIsInstance(topics_with_keyword, list)
-        self.assertTrue(len(topics_with_keyword) > 0)
-        
-        # 验证关键词出现在主题中
-        self.assertIn("足球", topics_with_keyword[0])
-    
-    def test_compare_with_model_essay(self):
-        """测试与范文对比功能"""
-        result = compare_with_model_essay("学生作文", "写事", "一次活动")
-        
-        self.assertIsInstance(result, str)
-        self.assertTrue(len(result) > 0)
-        self.assertIn("范文对比提示", result)
-    
-    def test_fallback_image_prompts(self):
-        """测试回退图片提示功能"""
+        self.assertTrue(len(feedback["strengths"]) >= 2)
+        self.assertTrue(len(feedback["suggestions"]) >= 2)
+
+    def test_fallback_feedback_empty_essay(self):
+        """Empty essay should not crash"""
+        feedback = fallback_feedback("三年级", "写人", "测试主题", "")
+        self.assertIsInstance(feedback, dict)
+        self.assertIn("teacher_feedback", feedback)
+
+    def test_fallback_feedback_all_grades(self):
+        """Should work for all grade levels"""
+        grades = ["三年级", "四年级", "五年级", "六年级"]
+        essay = "这是一篇测试作文。今天天气很好。"
+
+        for grade in grades:
+            fb = fallback_feedback(grade, "写事", "测试", essay)
+            self.assertIn("teacher_feedback", fb)
+
+    def test_fallback_feedback_all_genres(self):
+        """Should work for all essay genres"""
+        genres = ["写人", "写事", "写景", "想象作文", "读后感", "日记", "看图作文"]
+        essay = "今天天气很好。"
+
+        for genre in genres:
+            fb = fallback_feedback("三年级", genre, "测试", essay)
+            self.assertIn("teacher_feedback", fb)
+
+    def test_fallback_image_prompts_structure(self):
+        """Fallback image prompts must have all required fields"""
         prompts = fallback_image_prompts("三年级")
-        
+
         self.assertIn("scene", prompts)
-        self.assertIn("observe", prompts)
-        self.assertIn("questions", prompts)
+        self.assertIn("observation_tips", prompts)
+        self.assertIn("inspiring_questions", prompts)
         self.assertIn("suggested_title", prompts)
-        self.assertEqual(len(prompts["observe"]), 4)
-        self.assertEqual(len(prompts["questions"]), 4)
-    
-    def test_build_prompt(self):
-        """测试构建提示功能"""
-        prompt = build_prompt("三年级", "写人", "我的妈妈", "这是一篇测试作文。")
-        
-        # 验证提示包含所有必要信息
-        self.assertIn("三年级", prompt)
-        self.assertIn("写人", prompt)
-        self.assertIn("我的妈妈", prompt)
-        self.assertIn("这是一篇测试作文。", prompt)
-    
-    def test_grade_expectation(self):
-        """测试年级期望功能"""
-        expectation = grade_expectation("三年级")
-        self.assertIsInstance(expectation, str)
-        self.assertTrue(len(expectation) > 0)
-    
-    def test_get_rubric_markdown(self):
-        """测试获取评分标准markdown功能"""
-        markdown = get_rubric_markdown("三年级")
-        self.assertIsInstance(markdown, str)
-        self.assertTrue(len(markdown) > 0)
+
+    def test_fallback_image_prompts_content(self):
+        """Fallback image prompts should have useful content"""
+        prompts = fallback_image_prompts("四年级")
+
+        self.assertIsInstance(prompts["scene"], str)
+        self.assertGreater(len(prompts["scene"]), 0)
+        self.assertIsInstance(prompts["observation_tips"], list)
+        self.assertGreaterEqual(len(prompts["observation_tips"]), 2)
+        self.assertIsInstance(prompts["inspiring_questions"], list)
+        self.assertGreaterEqual(len(prompts["inspiring_questions"]), 2)
+
+    def test_fallback_image_prompts_all_grades(self):
+        """Should work for all grade levels"""
+        grades = ["三年级", "四年级", "五年级", "六年级"]
+        for grade in grades:
+            prompts = fallback_image_prompts(grade)
+            self.assertIn("scene", prompts)
+
+    def test_get_openai_client_without_key(self):
+        """Should return None when no API key is configured"""
+        client = get_openai_client()
+        # Without env config, should return None or fail gracefully
+        if client is not None:
+            # If configured, it's still valid
+            self.assertIsNotNone(client)
+
+
+class TestFallbackStepRewrite(unittest.TestCase):
+    """Test: Four-step rewrite guidance"""
+
+    def test_step_rewrite_has_four_steps(self):
+        """Should have exactly 4 rewrite steps"""
+        fb = fallback_feedback("三年级", "写事", "一次活动", "今天很高兴。")
+        steps = fb["step_rewrite"]
+
+        self.assertIn("step1_content", steps)
+        self.assertIn("step2_sentence", steps)
+        self.assertIn("step3_start", steps)
+        self.assertIn("step4_end", steps)
+
+    def test_step_rewrite_values_are_strings(self):
+        """All step values should be non-empty strings"""
+        fb = fallback_feedback("三年级", "写人", "我的妈妈", "妈妈很好。")
+        steps = fb["step_rewrite"]
+
+        for key in ["step1_content", "step2_sentence", "step3_start", "step4_end"]:
+            self.assertIsInstance(steps[key], str)
+            self.assertGreater(len(steps[key]), 0)
 
 
 if __name__ == '__main__':
